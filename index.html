@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BCU FORMULA CONCERT: Neon Beat Rush</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #0a0a0a;
+            color: #fff;
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow: hidden;
+        }
+        h1 {
+            color: #ff00ff;
+            text-shadow: 0 0 10px #ff00ff, 0 0 20px #ff00ff;
+            margin: 10px 0;
+            text-align: center;
+            font-size: 24px;
+        }
+        #gameContainer {
+            position: relative;
+        }
+        canvas {
+            background: linear-gradient(to bottom, #000000, #1a0033);
+            border: 3px solid #00ffff;
+            box-shadow: 0 0 20px #00ffff;
+            border-radius: 10px;
+            display: block;
+        }
+        #scoreBoard {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 20px;
+            font-weight: bold;
+            color: #00ffff;
+            text-shadow: 0 0 5px #00ffff;
+            z-index: 5;
+        }
+        #gameOverScreen {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 30px;
+            border: 2px solid #ff00ff;
+            box-shadow: 0 0 30px #ff00ff;
+            border-radius: 15px;
+            text-align: center;
+            z-index: 10;
+        }
+        #gameOverScreen h2 {
+            color: #ff0000;
+            text-shadow: 0 0 10px #ff0000;
+            margin-top: 0;
+        }
+        button {
+            background-color: #ff00ff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 8px;
+            box-shadow: 0 0 15px #ff00ff;
+            transition: all 0.2s;
+            margin-top: 15px;
+        }
+        button:hover {
+            background-color: #00ffff;
+            box-shadow: 0 0 20px #00ffff;
+            color: #000;
+            transform: scale(1.1);
+        }
+        .instructions {
+            margin-top: 10px;
+            color: #aaa;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🏎️ BCU FORMULA CONCERT 🎵</h1>
+    
+    <div id="gameContainer">
+        <div id="scoreBoard">SCORE: <span id="score">0</span></div>
+        <canvas id="gameCanvas" width="400" height="600"></canvas>
+        
+        <div id="gameOverScreen">
+            <h2>CRASHED! รถพังซะแล้ว!</h2>
+            <p>ความมันส์ของคุณหยุดอยู่ที่: <br><strong style="font-size: 30px; color: #00ffff;" id="finalScore">0</strong> คะแนน</p>
+            <button onclick="startGame()">เร่งเครื่องเล่นใหม่</button>
+        </div>
+    </div>
+    <div class="instructions">ใช้ปุ่มลูกศร ◀ ซ้าย / ขวา ▶ ในการบังคับรถ (หรือแตะซ้ายขวาบนหน้าจอ)</div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const finalScoreElement = document.getElementById('finalScore');
+
+        // การตั้งค่าเกม
+        let gameLoop;
+        let isGameOver = false;
+        let score = 0;
+        let gameSpeed = 5;
+        let frameCount = 0;
+
+        // รถผู้เล่น (ใช้ Emoji เพื่อความง่ายและเร็ว)
+        const player = {
+            x: 175,
+            y: 500,
+            width: 50,
+            height: 80,
+            speed: 7,
+            dx: 0
+        };
+
+        const objects = []; // อาเรย์เก็บสิ่งกีดขวางและไอเทม
+
+        // การควบคุม
+        const keys = { ArrowLeft: false, ArrowRight: false };
+
+        document.addEventListener('keydown', (e) => {
+            if (keys.hasOwnProperty(e.code)) keys[e.code] = true;
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (keys.hasOwnProperty(e.code)) keys[e.code] = false;
+        });
+
+        // รองรับการทัชบนมือถือ
+        canvas.addEventListener('touchstart', (e) => {
+            const touchX = e.touches[0].clientX;
+            const canvasRect = canvas.getBoundingClientRect();
+            if (touchX < canvasRect.left + canvasRect.width / 2) keys.ArrowLeft = true;
+            else keys.ArrowRight = true;
+        });
+        canvas.addEventListener('touchend', () => { keys.ArrowLeft = false; keys.ArrowRight = false; });
+
+        function createObject() {
+            const type = Math.random() > 0.3 ? 'obstacle' : 'collectible';
+            const width = 40;
+            const height = 40;
+            const x = Math.random() * (canvas.width - width);
+            
+            let emoji = '🚧'; // กรวยจราจร
+            if (type === 'collectible') {
+                const notes = ['🎵', '🎸', '🌟', '🎤'];
+                emoji = notes[Math.floor(Math.random() * notes.length)];
+            }
+
+            objects.push({ x, y: -50, width, height, type, emoji });
+        }
+
+        function update() {
+            if (isGameOver) return;
+
+            // อัปเดตตำแหน่งรถ
+            if (keys.ArrowLeft && player.x > 0) player.x -= player.speed;
+            if (keys.ArrowRight && player.x + player.width < canvas.width) player.x += player.speed;
+
+            // เพิ่มความเร็วเกมเรื่อยๆ เพื่อความมันส์
+            if (frameCount % 600 === 0) gameSpeed += 0.5;
+
+            // สุ่มสร้างของ
+            if (frameCount % Math.max(20, 60 - Math.floor(gameSpeed * 2)) === 0) {
+                createObject();
+            }
+
+            // อัปเดตตำแหน่งสิ่งของ
+            for (let i = 0; i < objects.length; i++) {
+                let obj = objects[i];
+                obj.y += gameSpeed;
+
+                // เช็คชน (Collision Detection แบบกล่อง)
+                if (player.x < obj.x + obj.width &&
+                    player.x + player.width > obj.x &&
+                    player.y < obj.y + obj.height &&
+                    player.y + player.height > obj.y) {
+                    
+                    if (obj.type === 'obstacle') {
+                        endGame();
+                    } else if (obj.type === 'collectible') {
+                        score += 10;
+                        scoreElement.innerText = score;
+                        objects.splice(i, 1);
+                        i--;
+                    }
+                }
+
+                // ลบของที่ตกจอ
+                if (obj.y > canvas.height) {
+                    objects.splice(i, 1);
+                    i--;
+                }
+            }
+
+            frameCount++;
+        }
+
+        function draw() {
+            // ล้างหน้าจอ
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // วาดเอฟเฟกต์เส้นถนนเลื่อนลง
+            ctx.fillStyle = 'rgba(255, 0, 255, 0.2)';
+            for (let i = 0; i < canvas.height; i += 100) {
+                ctx.fillRect(canvas.width / 2 - 2, (i + frameCount * gameSpeed) % canvas.height, 4, 50);
+            }
+
+            // วาดรถ (ใช้ Emoji)
+            ctx.font = "50px Arial";
+            ctx.fillText("🏎️", player.x, player.y + player.height - 15);
+
+            // วาดสิ่งของ
+            for (let obj of objects) {
+                ctx.font = "40px Arial";
+                ctx.fillText(obj.emoji, obj.x, obj.y + 35);
+            }
+        }
+
+        function gameRoutine() {
+            update();
+            draw();
+            if (!isGameOver) {
+                gameLoop = requestAnimationFrame(gameRoutine);
+            }
+        }
+
+        function startGame() {
+            isGameOver = false;
+            score = 0;
+            gameSpeed = 5;
+            frameCount = 0;
+            objects.length = 0;
+            player.x = canvas.width / 2 - player.width / 2;
+            scoreElement.innerText = score;
+            gameOverScreen.style.display = 'none';
+            gameRoutine();
+        }
+
+        function endGame() {
+            isGameOver = true;
+            finalScoreElement.innerText = score;
+            gameOverScreen.style.display = 'block';
+            cancelAnimationFrame(gameLoop);
+        }
+
+        // เริ่มเกมครั้งแรก
+        startGame();
+    </script>
+</body>
+</html>
